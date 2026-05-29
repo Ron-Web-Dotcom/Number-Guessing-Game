@@ -1,23 +1,32 @@
 # Number Guessing Game
 
-A C# console number guessing game with two game modes, three difficulty levels, AI-powered hints, hot/cold proximity feedback, win streaks, and a persistent top-5 leaderboard.
+A C# console number guessing game featuring three game modes, difficulty levels, AI-powered hints, hot/cold proximity feedback, multiplayer support, daily challenges, win streaks, a persistent top-5 leaderboard, average score tracking, and a unit test suite.
+
+## Game modes
+
+| # | Mode | Description |
+|---|------|-------------|
+| 1 | **You guess** | The computer picks a random number. You get proximity feedback and a Claude AI hint after each wrong guess. Supports 1–4 players competitively (same target, players take turns). |
+| 2 | **Computer guesses** | You think of a number; the computer uses binary search to find it (guaranteed in ≤ 7 guesses on Hard). |
+| 3 | **Daily challenge** | A date-seeded number that's the same for everyone that day. One attempt per day per difficulty — come back tomorrow for a new one. |
+
+## Difficulty levels
+
+| Level  | Range  | Guess limit |
+|--------|--------|-------------|
+| Easy   | 1–10   | Unlimited   |
+| Medium | 1–30   | Unlimited   |
+| Hard   | 1–100  | 7           |
 
 ## Features
 
-- **Mode 1 — You guess**: The computer picks a random number. After each wrong guess you get a proximity reading (*Burning hot / Hot / Warm / Cold / Freezing cold*) plus a Claude AI hint tailored to how close you are and how many guesses remain.
-- **Mode 2 — Computer guesses**: You think of a number and the computer uses binary search to find it (guaranteed in ≤ 7 guesses on Hard).
-- **Difficulty levels**
-
-  | Level  | Range  | Guess limit |
-  |--------|--------|-------------|
-  | Easy   | 1–10   | Unlimited   |
-  | Medium | 1–30   | Unlimited   |
-  | Hard   | 1–100  | 7           |
-
-- **Hot/cold proximity** — Each wrong guess shows how close you are as a percentage of the range, independent of the Claude API.
-- **Win streaks** — Tracks your current streak and best streak for the session; best all-time streak per difficulty is persisted.
-- **Top-5 leaderboard** — The 5 best scores per difficulty are saved to `scores.txt` and displayed after each game.
-- **Color-coded output** — Cyan for menus, green for wins, red for losses/errors, yellow for hints, magenta for stats.
+- **Hot/cold proximity** — Every wrong guess shows *BURNING HOT / Hot! / Warm / Cold / Freezing cold* based on how close you are as a percentage of the range.
+- **Stopwatch** — Each game session is timed; time is shown on win/loss and in multiplayer rankings.
+- **Multiplayer** — 1–4 players take turns on the same machine guessing the same target. Results are ranked by attempts then time.
+- **Average score** — Tracks total attempts across all wins per difficulty and displays your historical average.
+- **Win streaks** — Current streak, session best, and all-time best streak per difficulty.
+- **Top-5 leaderboard** — Best 5 scores per difficulty, persisted between sessions.
+- **Color-coded output** — Cyan for menus, green for wins, red for losses, yellow for hints, magenta for stats.
 
 ## Requirements
 
@@ -32,9 +41,17 @@ msbuild "Number Guessing.sln" /p:Configuration=Release
 "bin\Release\Number Guessing.exe"
 ```
 
+## Running the tests
+
+```
+dotnet test NumberGuessingTests\NumberGuessingTests.csproj
+```
+
+The test project uses NUnit 3 and compiles `GameLogic.cs` directly, so no extra build step is needed. Tests cover `GetProximity`, `BuildFallbackHint`, `GetDailyNumber`, `BinarySearchMid`, and `ComputeAverage`.
+
 ## AI hints (optional)
 
-AI hints require an Anthropic API key. The hint prompt includes the proximity level and remaining guess count so Claude's response is context-aware.
+Set `ANTHROPIC_API_KEY` before running to enable Claude-powered hints. The hint prompt includes proximity level and remaining guess count for context-aware responses.
 
 **Windows (Command Prompt)**
 ```
@@ -48,15 +65,13 @@ $env:ANTHROPIC_API_KEY="your-key-here"
 
 The game works without a key — proximity + directional fallback hints are always shown.
 
-## Score file
+## Score file (`scores.txt`)
 
-`scores.txt` is written next to the executable. Format:
+Written next to the executable. Format:
 
 ```
-Easy=3,5,7,8,10
-Easy_streak=4
-Medium=4,6,8
-Medium_streak=2
-Hard=6,7
-Hard_streak=1
+Easy=3,5,7,8,10              (top-5 scores)
+Easy_streak=4                (all-time best streak)
+Easy_avg=45,8                (totalAttempts,totalWins for average)
+Easy_2026-05-29=4            (daily challenge result)
 ```
