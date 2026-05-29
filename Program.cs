@@ -13,6 +13,10 @@ namespace Number_Guessing
         static readonly Random rng = new Random();
         static readonly HttpClient http = new HttpClient();
 
+        // Session stats
+        static int gamesPlayed = 0;
+        static int bestScore = int.MaxValue;
+
         static void Main(string[] args)
         {
             Console.WriteLine("=== Number Guessing Game ===");
@@ -48,10 +52,16 @@ namespace Number_Guessing
                     guess = readIntInRange("Your next guess: ");
                 }
 
+                gamesPlayed++;
+                if (amountGuesses < bestScore)
+                    bestScore = amountGuesses;
+
                 Console.WriteLine(
                     "\nYou guessed it! It took you {0} attempt{1}.",
                     amountGuesses,
                     amountGuesses == 1 ? "" : "s");
+
+                PrintSessionStats();
 
                 Console.Write("\nPlay again? (y/n): ");
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
@@ -86,6 +96,10 @@ namespace Number_Guessing
 
                     if (response == "correct")
                     {
+                        gamesPlayed++;
+                        if (attempts < bestScore)
+                            bestScore = attempts;
+
                         Console.WriteLine("\nGot it in " + attempts + " guess" + (attempts == 1 ? "" : "es") + "!");
                         solved = true;
                         break;
@@ -104,6 +118,8 @@ namespace Number_Guessing
                 if (!solved)
                     Console.WriteLine("\nI ran out of possibilities — are you sure the number was between " + minRange + " and " + maxRange + "?");
 
+                PrintSessionStats();
+
                 Console.Write("\nPlay again? (y/n): ");
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
                 Console.WriteLine();
@@ -111,6 +127,19 @@ namespace Number_Guessing
 
             Console.WriteLine("Thanks for playing!");
             Console.ReadLine();
+        }
+
+        // ── Session stats ────────────────────────────────────────────────────────
+
+        static void PrintSessionStats()
+        {
+            if (gamesPlayed == 0) return;
+            Console.WriteLine(
+                "  Session: {0} game{1} played | Best score: {2} attempt{3}",
+                gamesPlayed,
+                gamesPlayed == 1 ? "" : "s",
+                bestScore,
+                bestScore == 1 ? "" : "s");
         }
 
         // ── Claude API hint ──────────────────────────────────────────────────────
