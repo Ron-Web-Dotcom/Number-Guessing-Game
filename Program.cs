@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -7,15 +9,21 @@ namespace Number_Guessing
 {
     class Program
     {
-        const int minRange = 1;
-        const int maxRange = 30;
+        static readonly (string Name, int Min, int Max, int MaxAttempts)[] Difficulties =
+        {
+            ("Easy",   1,  10, int.MaxValue),
+            ("Medium", 1,  30, int.MaxValue),
+            ("Hard",   1, 100, 7),
+        };
+
+        static readonly string ScoreFile =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scores.txt");
 
         static readonly Random rng = new Random();
         static readonly HttpClient http = new HttpClient();
 
-        // Session stats
         static int gamesPlayed = 0;
-        static int bestScore = int.MaxValue;
+        static readonly Dictionary<string, int> bestScores = LoadBestScores();
 
         static void Main(string[] args)
         {
@@ -23,45 +31,76 @@ namespace Number_Guessing
             Console.WriteLine("1. You guess the computer's number");
             Console.WriteLine("2. Computer guesses your number");
             Console.Write("\nChoose a mode (1 or 2): ");
-
-            string choice = (Console.ReadLine() ?? "1").Trim();
+            string modeChoice = (Console.ReadLine() ?? "1").Trim();
             Console.WriteLine();
 
-            if (choice == "2")
-                PlayReverseMode();
+            var diff = ChooseDifficulty();
+            Console.WriteLine();
+
+            if (modeChoice == "2")
+                PlayReverseMode(diff);
             else
-                PlayNormalMode();
+                PlayNormalMode(diff);
+        }
+
+        // ── Difficulty selection ─────────────────────────────────────────────────
+
+        static (string Name, int Min, int Max, int MaxAttempts) ChooseDifficulty()
+        {
+            Console.WriteLine("Select difficulty:");
+            Console.WriteLine("1. Easy   (1-10,  unlimited guesses)");
+            Console.WriteLine("2. Medium (1-30,  unlimited guesses)");
+            Console.WriteLine("3. Hard   (1-100, 7 guesses max)");
+            Console.Write("Choose difficulty (1-3): ");
+            string choice = (Console.ReadLine() ?? "2").Trim();
+            return choice == "1" ? Difficulties[0] : choice == "3" ? Difficulties[2] : Difficulties[1];
         }
 
         // ── Normal mode ─────────────────────────────────────────────────────────
 
-        static void PlayNormalMode()
+        static void PlayNormalMode((string Name, int Min, int Max, int MaxAttempts) diff)
         {
             bool keepPlaying = true;
             do
             {
-                int realNumber = rng.Next(minRange, maxRange + 1);
-                int guess = readIntInRange("Guess a number between " + minRange + " and " + maxRange + ": ");
+                int realNumber = rng.Next(diff.Min, diff.Max + 1);
+                bool limited = diff.MaxAttempts != int.MaxValue;
+
+                string prompt = "Guess a number between " + diff.Min + " and " + diff.Max;
+                if (limited)
+                    prompt += " (" + diff.MaxAttempts + " guesses allowed)";
+                prompt += ": ";
+
+                int guess = readIntInRange(prompt, diff.Min, diff.Max);
                 int amountGuesses = 1;
+                bool won = false;
 
                 while (guess != realNumber)
                 {
+                    if (limited && amountGuesses >= diff.MaxAttempts)
+                    {
+                        Console.WriteLine("\nOut of guesses! The number was " + realNumber + ".");
+                        break;
+                    }
+
                     string direction = guess < realNumber ? "higher" : "lower";
-                    Console.WriteLine(GetAiHint(guess, direction, amountGuesses));
+                    int remaining = limited ? diff.MaxAttempts - amountGuesses : int.MaxValue;
+                    Console.WriteLine(GetAiHint(guess, direction, amountGuesses, diff.Min, diff.Max, remaining));
                     amountGuesses++;
-                    guess = readIntInRange("Your next guess: ");
+                    guess = readIntInRange("Your next guess: ", diff.Min, diff.Max);
                 }
 
-                gamesPlayed++;
-                if (amountGuesses < bestScore)
-                    bestScore = amountGuesses;
+                if (guess == realNumber)
+                {
+                    won = true;
+                    RecordScore(diff.Name, amountGuesses);
+                    Console.WriteLine(
+                        "\nYou guessed it! It took you {0} attempt{1}.",
+                        amountGuesses,
+                        amountGuesses == 1 ? "" : "s");
+                }
 
-                Console.WriteLine(
-                    "\nYou guessed it! It took you {0} attempt{1}.",
-                    amountGuesses,
-                    amountGuesses == 1 ? "" : "s");
-
-                PrintSessionStats();
+                if (won) PrintStats(diff.Name);
 
                 Console.Write("\nPlay again? (y/n): ");
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
@@ -74,16 +113,16 @@ namespace Number_Guessing
 
         // ── Reverse mode (computer guesses) ─────────────────────────────────────
 
-        static void PlayReverseMode()
+        static void PlayReverseMode((string Name, int Min, int Max, int MaxAttempts) diff)
         {
             bool keepPlaying = true;
             do
             {
-                Console.WriteLine("Think of a number between " + minRange + " and " + maxRange + ", then press Enter.");
+                Console.WriteLine("Think of a number between " + diff.Min + " and " + diff.Max + ", then press Enter.");
                 Console.ReadLine();
 
-                int low = minRange;
-                int high = maxRange;
+                int low = diff.Min;
+                int high = diff.Max;
                 int attempts = 0;
                 bool solved = false;
 
@@ -96,10 +135,7 @@ namespace Number_Guessing
 
                     if (response == "correct")
                     {
-                        gamesPlayed++;
-                        if (attempts < bestScore)
-                            bestScore = attempts;
-
+                        RecordScore(diff.Name, attempts);
                         Console.WriteLine("\nGot it in " + attempts + " guess" + (attempts == 1 ? "" : "es") + "!");
                         solved = true;
                         break;
@@ -116,9 +152,9 @@ namespace Number_Guessing
                 }
 
                 if (!solved)
-                    Console.WriteLine("\nI ran out of possibilities — are you sure the number was between " + minRange + " and " + maxRange + "?");
-
-                PrintSessionStats();
+                    Console.WriteLine("\nI ran out of possibilities — are you sure the number was between " + diff.Min + " and " + diff.Max + "?");
+                else
+                    PrintStats(diff.Name);
 
                 Console.Write("\nPlay again? (y/n): ");
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
@@ -129,33 +165,78 @@ namespace Number_Guessing
             Console.ReadLine();
         }
 
-        // ── Session stats ────────────────────────────────────────────────────────
+        // ── Score tracking ───────────────────────────────────────────────────────
 
-        static void PrintSessionStats()
+        static void RecordScore(string difficulty, int attempts)
         {
-            if (gamesPlayed == 0) return;
+            gamesPlayed++;
+            if (!bestScores.ContainsKey(difficulty) || attempts < bestScores[difficulty])
+            {
+                bestScores[difficulty] = attempts;
+                SaveBestScores();
+            }
+        }
+
+        static void PrintStats(string difficulty)
+        {
+            string best = bestScores.ContainsKey(difficulty)
+                ? bestScores[difficulty] + " attempt" + (bestScores[difficulty] == 1 ? "" : "s")
+                : "—";
             Console.WriteLine(
-                "  Session: {0} game{1} played | Best score: {2} attempt{3}",
+                "  Session: {0} game{1} played | Best on {2}: {3}",
                 gamesPlayed,
                 gamesPlayed == 1 ? "" : "s",
-                bestScore,
-                bestScore == 1 ? "" : "s");
+                difficulty,
+                best);
+        }
+
+        static Dictionary<string, int> LoadBestScores()
+        {
+            var scores = new Dictionary<string, int>();
+            if (!File.Exists(ScoreFile)) return scores;
+            try
+            {
+                foreach (string line in File.ReadAllLines(ScoreFile))
+                {
+                    string[] parts = line.Split('=');
+                    if (parts.Length == 2 && int.TryParse(parts[1].Trim(), out int val))
+                        scores[parts[0].Trim()] = val;
+                }
+            }
+            catch { }
+            return scores;
+        }
+
+        static void SaveBestScores()
+        {
+            try
+            {
+                var lines = new List<string>();
+                foreach (var kv in bestScores)
+                    lines.Add(kv.Key + "=" + kv.Value);
+                File.WriteAllLines(ScoreFile, lines);
+            }
+            catch { }
         }
 
         // ── Claude API hint ──────────────────────────────────────────────────────
 
-        static string GetAiHint(int guess, string direction, int attemptCount)
+        static string GetAiHint(int guess, string direction, int attemptCount, int min, int max, int remaining)
         {
             string apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
             if (string.IsNullOrEmpty(apiKey))
-                return "Try going " + direction + "!";
+                return BuildFallbackHint(direction, remaining);
 
             try
             {
+                string remainingClause = remaining != int.MaxValue
+                    ? " They have " + remaining + " guess" + (remaining == 1 ? "" : "es") + " left."
+                    : "";
+
                 string prompt =
-                    "A player is guessing a secret number between 1 and 30. " +
+                    "A player is guessing a secret number between " + min + " and " + max + ". " +
                     "They just guessed " + guess + ". The right direction is " + direction + ". " +
-                    "This is attempt number " + attemptCount + ". " +
+                    "This is attempt number " + attemptCount + "." + remainingClause + " " +
                     "Give one short, fun, encouraging hint in under 15 words. Do NOT reveal the number.";
 
                 string body =
@@ -185,7 +266,15 @@ namespace Number_Guessing
             }
             catch { }
 
-            return "Try going " + direction + "!";
+            return BuildFallbackHint(direction, remaining);
+        }
+
+        static string BuildFallbackHint(string direction, int remaining)
+        {
+            string hint = "Try going " + direction + "!";
+            if (remaining != int.MaxValue && remaining <= 3)
+                hint += " (" + remaining + " guess" + (remaining == 1 ? "" : "es") + " left)";
+            return hint;
         }
 
         static string EscapeJson(string s) =>
@@ -196,14 +285,14 @@ namespace Number_Guessing
 
         // ── Helpers ──────────────────────────────────────────────────────────────
 
-        private static int readIntInRange(string message)
+        private static int readIntInRange(string message, int min, int max)
         {
             while (true)
             {
                 Console.Write(message);
-                if (int.TryParse(Console.ReadLine(), out int result) && result >= minRange && result <= maxRange)
+                if (int.TryParse(Console.ReadLine(), out int result) && result >= min && result <= max)
                     return result;
-                Console.WriteLine("Please enter a number between " + minRange + " and " + maxRange + ".");
+                Console.WriteLine("Please enter a number between " + min + " and " + max + ".");
             }
         }
     }
