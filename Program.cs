@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -22,15 +23,23 @@ namespace Number_Guessing
         static readonly Random rng = new Random();
         static readonly HttpClient http = new HttpClient();
 
+        // Session stats
         static int gamesPlayed = 0;
-        static readonly Dictionary<string, int> bestScores = LoadBestScores();
+        static int currentStreak = 0;
+        static int sessionBestStreak = 0;
+
+        // Persistent data: top-5 scores and best streak per difficulty
+        static readonly Dictionary<string, List<int>> leaderboard = new Dictionary<string, List<int>>();
+        static readonly Dictionary<string, int> bestStreaks = new Dictionary<string, int>();
+
+        static Program() { LoadScores(); }
 
         static void Main(string[] args)
         {
-            Console.WriteLine("=== Number Guessing Game ===");
+            WriteColor("\n=== Number Guessing Game ===\n", ConsoleColor.Cyan);
             Console.WriteLine("1. You guess the computer's number");
             Console.WriteLine("2. Computer guesses your number");
-            Console.Write("\nChoose a mode (1 or 2): ");
+            WriteColor("\nChoose a mode (1 or 2): ", ConsoleColor.White, newLine: false);
             string modeChoice = (Console.ReadLine() ?? "1").Trim();
             Console.WriteLine();
 
@@ -47,11 +56,11 @@ namespace Number_Guessing
 
         static (string Name, int Min, int Max, int MaxAttempts) ChooseDifficulty()
         {
-            Console.WriteLine("Select difficulty:");
+            WriteColor("Select difficulty:", ConsoleColor.Cyan);
             Console.WriteLine("1. Easy   (1-10,  unlimited guesses)");
             Console.WriteLine("2. Medium (1-30,  unlimited guesses)");
             Console.WriteLine("3. Hard   (1-100, 7 guesses max)");
-            Console.Write("Choose difficulty (1-3): ");
+            WriteColor("Choose difficulty (1-3): ", ConsoleColor.White, newLine: false);
             string choice = (Console.ReadLine() ?? "2").Trim();
             return choice == "1" ? Difficulties[0] : choice == "3" ? Difficulties[2] : Difficulties[1];
         }
@@ -66,12 +75,10 @@ namespace Number_Guessing
                 int realNumber = rng.Next(diff.Min, diff.Max + 1);
                 bool limited = diff.MaxAttempts != int.MaxValue;
 
-                string prompt = "Guess a number between " + diff.Min + " and " + diff.Max;
-                if (limited)
-                    prompt += " (" + diff.MaxAttempts + " guesses allowed)";
-                prompt += ": ";
+                string firstPrompt = "Guess a number between " + diff.Min + " and " + diff.Max
+                    + (limited ? " (" + diff.MaxAttempts + " guesses allowed)" : "") + ": ";
 
-                int guess = readIntInRange(prompt, diff.Min, diff.Max);
+                int guess = readIntInRange(firstPrompt, diff.Min, diff.Max);
                 int amountGuesses = 1;
                 bool won = false;
 
@@ -79,13 +86,15 @@ namespace Number_Guessing
                 {
                     if (limited && amountGuesses >= diff.MaxAttempts)
                     {
-                        Console.WriteLine("\nOut of guesses! The number was " + realNumber + ".");
+                        WriteColor("\nOut of guesses! The number was " + realNumber + ".", ConsoleColor.Red);
                         break;
                     }
 
                     string direction = guess < realNumber ? "higher" : "lower";
                     int remaining = limited ? diff.MaxAttempts - amountGuesses : int.MaxValue;
-                    Console.WriteLine(GetAiHint(guess, direction, amountGuesses, diff.Min, diff.Max, remaining));
+                    string proximity = GetProximity(guess, realNumber, diff.Min, diff.Max);
+
+                    WriteColor(proximity + " — " + GetAiHint(guess, direction, amountGuesses, diff.Min, diff.Max, remaining, proximity), ConsoleColor.Yellow);
                     amountGuesses++;
                     guess = readIntInRange("Your next guess: ", diff.Min, diff.Max);
                 }
@@ -93,21 +102,24 @@ namespace Number_Guessing
                 if (guess == realNumber)
                 {
                     won = true;
-                    RecordScore(diff.Name, amountGuesses);
-                    Console.WriteLine(
-                        "\nYou guessed it! It took you {0} attempt{1}.",
-                        amountGuesses,
-                        amountGuesses == 1 ? "" : "s");
+                    RecordScore(diff.Name, amountGuesses, won: true);
+                    WriteColor(
+                        "\nYou guessed it! It took you " + amountGuesses + " attempt" + (amountGuesses == 1 ? "" : "s") + ".",
+                        ConsoleColor.Green);
+                }
+                else
+                {
+                    RecordScore(diff.Name, amountGuesses, won: false);
                 }
 
-                if (won) PrintStats(diff.Name);
+                PrintStats(diff.Name);
 
-                Console.Write("\nPlay again? (y/n): ");
+                WriteColor("\nPlay again? (y/n): ", ConsoleColor.White, newLine: false);
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
                 Console.WriteLine();
             } while (keepPlaying);
 
-            Console.WriteLine("Thanks for playing!");
+            WriteColor("Thanks for playing!", ConsoleColor.Cyan);
             Console.ReadLine();
         }
 
@@ -118,7 +130,7 @@ namespace Number_Guessing
             bool keepPlaying = true;
             do
             {
-                Console.WriteLine("Think of a number between " + diff.Min + " and " + diff.Max + ", then press Enter.");
+                WriteColor("Think of a number between " + diff.Min + " and " + diff.Max + ", then press Enter.", ConsoleColor.Cyan);
                 Console.ReadLine();
 
                 int low = diff.Min;
@@ -130,13 +142,13 @@ namespace Number_Guessing
                 {
                     int mid = (low + high) / 2;
                     attempts++;
-                    Console.Write("Is your number " + mid + "? (higher / lower / correct): ");
+                    WriteColor("Is your number " + mid + "? (higher / lower / correct): ", ConsoleColor.White, newLine: false);
                     string response = (Console.ReadLine() ?? "").ToLower().Trim();
 
                     if (response == "correct")
                     {
-                        RecordScore(diff.Name, attempts);
-                        Console.WriteLine("\nGot it in " + attempts + " guess" + (attempts == 1 ? "" : "es") + "!");
+                        RecordScore(diff.Name, attempts, won: true);
+                        WriteColor("\nGot it in " + attempts + " guess" + (attempts == 1 ? "" : "es") + "!", ConsoleColor.Green);
                         solved = true;
                         break;
                     }
@@ -146,74 +158,142 @@ namespace Number_Guessing
                         high = mid - 1;
                     else
                     {
-                        Console.WriteLine("Please type 'higher', 'lower', or 'correct'.");
+                        WriteColor("Please type 'higher', 'lower', or 'correct'.", ConsoleColor.Red);
                         attempts--;
                     }
                 }
 
                 if (!solved)
-                    Console.WriteLine("\nI ran out of possibilities — are you sure the number was between " + diff.Min + " and " + diff.Max + "?");
-                else
-                    PrintStats(diff.Name);
+                    WriteColor("\nI ran out of possibilities — are you sure the number was between " + diff.Min + " and " + diff.Max + "?", ConsoleColor.Red);
 
-                Console.Write("\nPlay again? (y/n): ");
+                PrintStats(diff.Name);
+
+                WriteColor("\nPlay again? (y/n): ", ConsoleColor.White, newLine: false);
                 keepPlaying = (Console.ReadLine() ?? "").ToLower().Trim() != "n";
                 Console.WriteLine();
             } while (keepPlaying);
 
-            Console.WriteLine("Thanks for playing!");
+            WriteColor("Thanks for playing!", ConsoleColor.Cyan);
             Console.ReadLine();
+        }
+
+        // ── Proximity indicator ──────────────────────────────────────────────────
+
+        static string GetProximity(int guess, int answer, int min, int max)
+        {
+            double pct = Math.Abs(guess - answer) / (double)(max - min);
+            if (pct <= 0.05) return "BURNING HOT";
+            if (pct <= 0.15) return "Hot!";
+            if (pct <= 0.35) return "Warm";
+            if (pct <= 0.60) return "Cold";
+            return "Freezing cold";
         }
 
         // ── Score tracking ───────────────────────────────────────────────────────
 
-        static void RecordScore(string difficulty, int attempts)
+        static void RecordScore(string difficulty, int attempts, bool won)
         {
             gamesPlayed++;
-            if (!bestScores.ContainsKey(difficulty) || attempts < bestScores[difficulty])
+
+            if (won)
             {
-                bestScores[difficulty] = attempts;
-                SaveBestScores();
+                currentStreak++;
+                if (currentStreak > sessionBestStreak)
+                    sessionBestStreak = currentStreak;
+
+                if (!leaderboard.ContainsKey(difficulty))
+                    leaderboard[difficulty] = new List<int>();
+
+                leaderboard[difficulty].Add(attempts);
+                leaderboard[difficulty].Sort();
+                if (leaderboard[difficulty].Count > 5)
+                    leaderboard[difficulty].RemoveAt(leaderboard[difficulty].Count - 1);
+
+                int allTimeBest = bestStreaks.ContainsKey(difficulty) ? bestStreaks[difficulty] : 0;
+                if (currentStreak > allTimeBest)
+                    bestStreaks[difficulty] = currentStreak;
+
+                SaveScores();
+            }
+            else
+            {
+                currentStreak = 0;
             }
         }
 
         static void PrintStats(string difficulty)
         {
-            string best = bestScores.ContainsKey(difficulty)
-                ? bestScores[difficulty] + " attempt" + (bestScores[difficulty] == 1 ? "" : "s")
-                : "—";
-            Console.WriteLine(
-                "  Session: {0} game{1} played | Best on {2}: {3}",
-                gamesPlayed,
-                gamesPlayed == 1 ? "" : "s",
-                difficulty,
-                best);
+            Console.WriteLine();
+            WriteColor("  ── Stats ──────────────────────────────", ConsoleColor.Magenta);
+
+            // Session
+            WriteColor(
+                "  Session : " + gamesPlayed + " game" + (gamesPlayed == 1 ? "" : "s") +
+                " | Streak: " + currentStreak +
+                " (best this session: " + sessionBestStreak + ")",
+                ConsoleColor.Magenta);
+
+            // All-time streak
+            int allTimeStreak = bestStreaks.ContainsKey(difficulty) ? bestStreaks[difficulty] : 0;
+            WriteColor("  All-time best streak on " + difficulty + ": " + allTimeStreak, ConsoleColor.Magenta);
+
+            // Top-5 leaderboard
+            if (leaderboard.ContainsKey(difficulty) && leaderboard[difficulty].Count > 0)
+            {
+                WriteColor("  Top scores on " + difficulty + ":", ConsoleColor.Magenta);
+                var scores = leaderboard[difficulty];
+                for (int i = 0; i < scores.Count; i++)
+                    WriteColor(
+                        "    " + (i + 1) + ". " + scores[i] + " attempt" + (scores[i] == 1 ? "" : "s"),
+                        ConsoleColor.Magenta);
+            }
+
+            WriteColor("  ────────────────────────────────────────", ConsoleColor.Magenta);
         }
 
-        static Dictionary<string, int> LoadBestScores()
+        // ── Persistence ──────────────────────────────────────────────────────────
+
+        static void LoadScores()
         {
-            var scores = new Dictionary<string, int>();
-            if (!File.Exists(ScoreFile)) return scores;
+            if (!File.Exists(ScoreFile)) return;
             try
             {
                 foreach (string line in File.ReadAllLines(ScoreFile))
                 {
                     string[] parts = line.Split('=');
-                    if (parts.Length == 2 && int.TryParse(parts[1].Trim(), out int val))
-                        scores[parts[0].Trim()] = val;
+                    if (parts.Length != 2) continue;
+                    string key = parts[0].Trim();
+                    string val = parts[1].Trim();
+
+                    if (key.EndsWith("_streak"))
+                    {
+                        string diff = key.Substring(0, key.Length - 7);
+                        if (int.TryParse(val, out int s))
+                            bestStreaks[diff] = s;
+                    }
+                    else
+                    {
+                        var scores = new List<int>();
+                        foreach (string token in val.Split(','))
+                            if (int.TryParse(token.Trim(), out int v))
+                                scores.Add(v);
+                        if (scores.Count > 0)
+                            leaderboard[key] = scores;
+                    }
                 }
             }
             catch { }
-            return scores;
         }
 
-        static void SaveBestScores()
+        static void SaveScores()
         {
             try
             {
                 var lines = new List<string>();
-                foreach (var kv in bestScores)
-                    lines.Add(kv.Key + "=" + kv.Value);
+                foreach (var kv in leaderboard)
+                    lines.Add(kv.Key + "=" + string.Join(",", kv.Value));
+                foreach (var kv in bestStreaks)
+                    lines.Add(kv.Key + "_streak=" + kv.Value);
                 File.WriteAllLines(ScoreFile, lines);
             }
             catch { }
@@ -221,7 +301,7 @@ namespace Number_Guessing
 
         // ── Claude API hint ──────────────────────────────────────────────────────
 
-        static string GetAiHint(int guess, string direction, int attemptCount, int min, int max, int remaining)
+        static string GetAiHint(int guess, string direction, int attemptCount, int min, int max, int remaining, string proximity)
         {
             string apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
             if (string.IsNullOrEmpty(apiKey))
@@ -236,6 +316,7 @@ namespace Number_Guessing
                 string prompt =
                     "A player is guessing a secret number between " + min + " and " + max + ". " +
                     "They just guessed " + guess + ". The right direction is " + direction + ". " +
+                    "Proximity to the answer: " + proximity + ". " +
                     "This is attempt number " + attemptCount + "." + remainingClause + " " +
                     "Give one short, fun, encouraging hint in under 15 words. Do NOT reveal the number.";
 
@@ -283,16 +364,26 @@ namespace Number_Guessing
         static string UnescapeJson(string s) =>
             s.Replace("\\\"", "\"").Replace("\\\\", "\\").Replace("\\n", "\n").Replace("\\r", "").Replace("\\t", "\t");
 
-        // ── Helpers ──────────────────────────────────────────────────────────────
+        // ── Console color helper ─────────────────────────────────────────────────
+
+        static void WriteColor(string text, ConsoleColor color, bool newLine = true)
+        {
+            Console.ForegroundColor = color;
+            if (newLine) Console.WriteLine(text);
+            else Console.Write(text);
+            Console.ResetColor();
+        }
+
+        // ── Input helper ─────────────────────────────────────────────────────────
 
         private static int readIntInRange(string message, int min, int max)
         {
             while (true)
             {
-                Console.Write(message);
+                WriteColor(message, ConsoleColor.White, newLine: false);
                 if (int.TryParse(Console.ReadLine(), out int result) && result >= min && result <= max)
                     return result;
-                Console.WriteLine("Please enter a number between " + min + " and " + max + ".");
+                WriteColor("Please enter a number between " + min + " and " + max + ".", ConsoleColor.Red);
             }
         }
     }
