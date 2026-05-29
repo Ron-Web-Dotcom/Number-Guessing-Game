@@ -1,5 +1,7 @@
 # Number Guessing Game
 
+![Tests](https://github.com/Ron-Web-Dotcom/Number-Guessing-Game/actions/workflows/tests.yml/badge.svg)
+
 A C# console number guessing game featuring three game modes, difficulty levels, AI-powered hints, hot/cold proximity feedback, multiplayer support, daily challenges, win streaks, a persistent top-5 leaderboard, average score tracking, and a unit test suite.
 
 ## Game modes
@@ -44,10 +46,12 @@ msbuild "Number Guessing.sln" /p:Configuration=Release
 ## Running the tests
 
 ```
-dotnet test NumberGuessingTests\NumberGuessingTests.csproj
+dotnet test NumberGuessingTests/NumberGuessingTests.csproj
 ```
 
-The test project uses NUnit 3 and compiles `GameLogic.cs` directly, so no extra build step is needed. Tests cover `GetProximity`, `BuildFallbackHint`, `GetDailyNumber`, `BinarySearchMid`, and `ComputeAverage`.
+The test project targets `.NET 8` and compiles `GameLogic.cs` directly (no exe-reference needed). Tests cover `GetProximity`, `BuildFallbackHint`, `GetDailyNumber`, `BinarySearchMid`, and `ComputeAverage`.
+
+Tests run automatically via GitHub Actions on every push and pull request — see the badge at the top of this file.
 
 ## AI hints (optional)
 

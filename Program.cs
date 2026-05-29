@@ -204,6 +204,7 @@ namespace Number_Guessing
             string firstPrompt = playerName + ", guess a number between " + diff.Min + " and " + diff.Max
                 + (limited ? " (" + diff.MaxAttempts + " guesses allowed)" : "") + ": ";
 
+            var history = new List<(int Guess, string Proximity, string Direction)>();
             var sw = Stopwatch.StartNew();
             int guess = readIntInRange(firstPrompt, diff.Min, diff.Max);
             int attempts = 1;
@@ -213,13 +214,18 @@ namespace Number_Guessing
                 if (limited && attempts >= diff.MaxAttempts)
                 {
                     sw.Stop();
+                    history.Add((guess, GameLogic.GetProximity(guess, target, diff.Min, diff.Max),
+                        guess < target ? "↑" : "↓"));
                     WriteColor("\nOut of guesses! The number was " + target + ".", ConsoleColor.Red);
+                    PrintGuessHistory(history, won: false);
                     return (playerName, attempts, sw.Elapsed.TotalSeconds, Won: false);
                 }
 
                 string direction = guess < target ? "higher" : "lower";
-                int remaining = limited ? diff.MaxAttempts - attempts : int.MaxValue;
+                string arrow     = guess < target ? "↑" : "↓";
+                int remaining    = limited ? diff.MaxAttempts - attempts : int.MaxValue;
                 string proximity = GameLogic.GetProximity(guess, target, diff.Min, diff.Max);
+                history.Add((guess, proximity, arrow));
                 WriteColor(proximity + " — " + GetAiHint(guess, direction, attempts, diff.Min, diff.Max, remaining, proximity), ConsoleColor.Yellow);
 
                 attempts++;
@@ -227,11 +233,28 @@ namespace Number_Guessing
             }
 
             sw.Stop();
+            history.Add((guess, "✓", ""));
             WriteColor(
                 "\n" + playerName + " guessed it in " + attempts + " attempt" + (attempts == 1 ? "" : "s")
                 + " (" + sw.Elapsed.TotalSeconds.ToString("F1") + "s)!",
                 ConsoleColor.Green);
+            PrintGuessHistory(history, won: true);
             return (playerName, attempts, sw.Elapsed.TotalSeconds, Won: true);
+        }
+
+        static void PrintGuessHistory(List<(int Guess, string Proximity, string Direction)> history, bool won)
+        {
+            if (history.Count == 0) return;
+            Console.WriteLine();
+            WriteColor("  Guess history:", ConsoleColor.Cyan);
+            for (int i = 0; i < history.Count; i++)
+            {
+                var (g, prox, dir) = history[i];
+                bool isLast = i == history.Count - 1;
+                ConsoleColor color = isLast && won ? ConsoleColor.Green : ConsoleColor.DarkYellow;
+                string label = isLast && won ? "  ✓" : "  " + (i + 1) + ".";
+                WriteColor(label + " " + g.ToString().PadLeft(4) + "  " + (dir + " " + prox).TrimEnd(), color);
+            }
         }
 
         // ── Reverse mode ─────────────────────────────────────────────────────────
