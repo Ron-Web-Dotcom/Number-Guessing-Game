@@ -45,11 +45,12 @@ namespace Number_Guessing
         static int sessionBestStreak = 0;
 
         // Persistent data
-        static readonly Dictionary<string, List<int>> leaderboard             = new Dictionary<string, List<int>>();
-        static readonly Dictionary<string, int> bestStreaks                   = new Dictionary<string, int>();
+        static readonly Dictionary<string, List<int>> leaderboard               = new Dictionary<string, List<int>>();
+        static readonly Dictionary<string, int> bestStreaks                     = new Dictionary<string, int>();
         static readonly Dictionary<string, (int Total, int Wins)> scoreAverages = new Dictionary<string, (int, int)>();
-        static readonly Dictionary<string, int> dailyResults                  = new Dictionary<string, int>();
-        static readonly HashSet<string> unlockedAchievements                  = new HashSet<string>();
+        static readonly Dictionary<string, int> dailyResults                    = new Dictionary<string, int>();
+        static readonly HashSet<string> unlockedAchievements                    = new HashSet<string>();
+        static int totalGamesAllTime = 0;
 
         static Program() { LoadScores(); }
 
@@ -61,9 +62,12 @@ namespace Number_Guessing
             Console.WriteLine("1. You guess the computer's number");
             Console.WriteLine("2. Computer guesses your number");
             Console.WriteLine("3. Daily challenge  (same number for everyone today)");
-            WriteColor("\nChoose a mode (1-3): ", ConsoleColor.White, newLine: false);
+            Console.WriteLine("4. View achievements");
+            WriteColor("\nChoose a mode (1-4): ", ConsoleColor.White, newLine: false);
             string modeChoice = (Console.ReadLine() ?? "1").Trim();
             Console.WriteLine();
+
+            if (modeChoice == "4") { ShowAllAchievements(); return; }
 
             var diff = ChooseDifficulty();
             Console.WriteLine();
@@ -458,6 +462,33 @@ namespace Number_Guessing
             Console.ReadLine();
         }
 
+        // ── Achievement viewer ───────────────────────────────────────────────────
+
+        static void ShowAllAchievements()
+        {
+            WriteColor("\n=== Achievements (" + unlockedAchievements.Count
+                + "/" + AchievementInfo.Count + ") ===\n", ConsoleColor.Cyan);
+
+            foreach (var kv in AchievementInfo)
+            {
+                bool earned = unlockedAchievements.Contains(kv.Key);
+                if (earned)
+                {
+                    WriteColor("  [+] " + kv.Value.Title, ConsoleColor.DarkYellow);
+                    WriteColor("       " + kv.Value.Desc, ConsoleColor.DarkYellow);
+                }
+                else
+                {
+                    WriteColor("  [ ] " + kv.Value.Title, ConsoleColor.DarkGray);
+                    WriteColor("       " + kv.Value.Desc, ConsoleColor.DarkGray);
+                }
+                Console.WriteLine();
+            }
+
+            WriteColor("All-time games played: " + totalGamesAllTime, ConsoleColor.Magenta);
+            Console.ReadLine();
+        }
+
         // ── Achievement system ───────────────────────────────────────────────────
 
         static void AwardAchievements(string difficulty, int attempts, double seconds,
@@ -470,14 +501,14 @@ namespace Number_Guessing
                 if (cond && unlockedAchievements.Add(id)) earned.Add(id);
             }
 
-            Check("first_blood",  gamesPlayed == 1);
+            Check("first_blood",  totalGamesAllTime == 1);
             Check("one_shot",     attempts == 1);
             Check("speed_demon",  seconds < 5.0);
             Check("hot_streak",   currentStreak >= 5);
             Check("comeback",     difficulty == "Hard" && remainingGuesses == 1);
             Check("daily_player", isDaily);
             Check("hard_boiled",  difficulty == "Hard");
-            Check("veteran",      gamesPlayed >= 20);
+            Check("veteran",      totalGamesAllTime >= 20);
 
             if (earned.Count > 0) SaveScores();
 
@@ -493,6 +524,7 @@ namespace Number_Guessing
         static void RecordWin(string difficulty, int attempts)
         {
             gamesPlayed++;
+            totalGamesAllTime++;
             currentStreak++;
             if (currentStreak > sessionBestStreak) sessionBestStreak = currentStreak;
 
@@ -513,6 +545,7 @@ namespace Number_Guessing
         static void RecordLoss(string difficulty)
         {
             gamesPlayed++;
+            totalGamesAllTime++;
             currentStreak = 0;
         }
 
@@ -540,13 +573,15 @@ namespace Number_Guessing
                         + " attempt" + (leaderboard[difficulty][i] == 1 ? "" : "s"), ConsoleColor.Magenta);
             }
 
-            if (unlockedAchievements.Count > 0)
+            WriteColor("  Achievements (" + unlockedAchievements.Count
+                + "/" + AchievementInfo.Count + ") — type 4 from main menu to see all:", ConsoleColor.DarkYellow);
+            foreach (var kv in AchievementInfo)
             {
-                WriteColor("  Achievements (" + unlockedAchievements.Count
-                    + "/" + AchievementInfo.Count + "):", ConsoleColor.DarkYellow);
-                foreach (string id in unlockedAchievements)
-                    if (AchievementInfo.ContainsKey(id))
-                        WriteColor("    [" + AchievementInfo[id].Title + "]", ConsoleColor.DarkYellow);
+                bool earned = unlockedAchievements.Contains(kv.Key);
+                if (earned)
+                    WriteColor("    [+] " + kv.Value.Title, ConsoleColor.DarkYellow);
+                else
+                    WriteColor("    [ ] " + kv.Value.Title + " — " + kv.Value.Desc, ConsoleColor.DarkGray);
             }
 
             WriteColor("  ────────────────────────────────────────────────", ConsoleColor.Magenta);
@@ -565,7 +600,11 @@ namespace Number_Guessing
                     if (parts.Length != 2) continue;
                     string key = parts[0].Trim(), val = parts[1].Trim();
 
-                    if (key == "achievements")
+                    if (key == "total_games")
+                    {
+                        if (int.TryParse(val, out int g)) totalGamesAllTime = g;
+                    }
+                    else if (key == "achievements")
                     {
                         foreach (string a in val.Split(','))
                             if (!string.IsNullOrWhiteSpace(a)) unlockedAchievements.Add(a.Trim());
@@ -602,6 +641,7 @@ namespace Number_Guessing
             try
             {
                 var lines = new List<string>();
+                lines.Add("total_games=" + totalGamesAllTime);
                 if (unlockedAchievements.Count > 0)
                     lines.Add("achievements=" + string.Join(",", unlockedAchievements));
                 foreach (var kv in leaderboard)    lines.Add(kv.Key + "=" + string.Join(",", kv.Value));
