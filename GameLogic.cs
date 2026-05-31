@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Number_Guessing
 {
@@ -33,5 +34,27 @@ namespace Number_Guessing
 
         public static double ComputeAverage(int totalAttempts, int totalWins) =>
             totalWins == 0 ? 0.0 : Math.Round((double)totalAttempts / totalWins, 1);
+
+        public static string FormatAttempts(int count) =>
+            count + " attempt" + (count == 1 ? "" : "s");
+
+        public static List<int> ParseScoreList(string csv)
+        {
+            var result = new List<int>();
+            if (string.IsNullOrWhiteSpace(csv)) return result;
+            foreach (string token in csv.Split(','))
+                if (int.TryParse(token.Trim(), out int v)) result.Add(v);
+            return result;
+        }
+
+        public static bool TryParseAverage(string csv, out int total, out int wins)
+        {
+            total = wins = 0;
+            if (string.IsNullOrWhiteSpace(csv)) return false;
+            string[] parts = csv.Split(',');
+            return parts.Length == 2
+                && int.TryParse(parts[0].Trim(), out total)
+                && int.TryParse(parts[1].Trim(), out wins);
+        }
     }
 }

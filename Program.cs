@@ -37,7 +37,7 @@ namespace Number_Guessing
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scores.txt");
 
         static readonly Random rng = new Random();
-        static readonly HttpClient http = new HttpClient();
+        static readonly HttpClient http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
 
         // Session stats
         static int gamesPlayed = 0;
@@ -58,16 +58,31 @@ namespace Number_Guessing
 
         static void Main(string[] args)
         {
+            if (args.Length > 0)
+            {
+                switch (args[0].ToLower().TrimStart('-'))
+                {
+                    case "help": case "h":
+                        PrintHelp(); return;
+                    case "stats": case "s":
+                        ShowAllStats(); return;
+                    case "achievements": case "a":
+                        ShowAllAchievements(); return;
+                }
+            }
+
             WriteColor("\n=== Number Guessing Game ===\n", ConsoleColor.Cyan);
             Console.WriteLine("1. You guess the computer's number");
             Console.WriteLine("2. Computer guesses your number");
             Console.WriteLine("3. Daily challenge  (same number for everyone today)");
             Console.WriteLine("4. View achievements");
-            WriteColor("\nChoose a mode (1-4): ", ConsoleColor.White, newLine: false);
+            Console.WriteLine("5. All-time statistics");
+            WriteColor("\nChoose a mode (1-5): ", ConsoleColor.White, newLine: false);
             string modeChoice = (Console.ReadLine() ?? "1").Trim();
             Console.WriteLine();
 
             if (modeChoice == "4") { ShowAllAchievements(); return; }
+            if (modeChoice == "5") { ShowAllStats(); return; }
 
             var diff = ChooseDifficulty();
             Console.WriteLine();
@@ -462,6 +477,78 @@ namespace Number_Guessing
             Console.ReadLine();
         }
 
+        // ── All-time stats screen ────────────────────────────────────────────────
+
+        static void ShowAllStats()
+        {
+            WriteColor("\n=== All-time Statistics ===\n", ConsoleColor.Cyan);
+
+            var allDiffs = new HashSet<string>();
+            foreach (var k in leaderboard.Keys)   allDiffs.Add(k);
+            foreach (var k in scoreAverages.Keys) allDiffs.Add(k);
+            foreach (var k in bestStreaks.Keys)   allDiffs.Add(k);
+
+            // Canonical order first, then custom
+            var ordered = new List<string>();
+            foreach (string d in new[] { "Easy", "Medium", "Hard" })
+                if (allDiffs.Remove(d)) ordered.Add(d);
+            foreach (string d in allDiffs) ordered.Add(d);
+
+            if (ordered.Count == 0)
+            {
+                WriteColor("  No games recorded yet — play a round first!", ConsoleColor.DarkGray);
+            }
+            else
+            {
+                WriteColor(string.Format("  {0,-22}{1,6}{2,8}{3,7}{4,9}",
+                    "Difficulty", "Best", "Avg", "Wins", "Streak"), ConsoleColor.White);
+                WriteColor("  " + new string('─', 52), ConsoleColor.DarkGray);
+
+                foreach (string d in ordered)
+                {
+                    string best   = leaderboard.ContainsKey(d) && leaderboard[d].Count > 0
+                        ? leaderboard[d][0].ToString() : "—";
+                    string avg    = scoreAverages.ContainsKey(d) && scoreAverages[d].Wins > 0
+                        ? GameLogic.ComputeAverage(scoreAverages[d].Total, scoreAverages[d].Wins).ToString("F1") : "—";
+                    int wins      = scoreAverages.ContainsKey(d) ? scoreAverages[d].Wins : 0;
+                    int streak    = bestStreaks.ContainsKey(d)   ? bestStreaks[d] : 0;
+                    WriteColor(string.Format("  {0,-22}{1,6}{2,8}{3,7}{4,9}",
+                        d, best, avg, wins, streak), ConsoleColor.Magenta);
+                }
+
+                WriteColor("  " + new string('─', 52), ConsoleColor.DarkGray);
+            }
+
+            Console.WriteLine();
+            WriteColor("  Total games played : " + totalGamesAllTime, ConsoleColor.Magenta);
+            WriteColor("  Daily challenges   : " + dailyResults.Count, ConsoleColor.Magenta);
+            WriteColor("  Achievements       : " + unlockedAchievements.Count
+                + "/" + AchievementInfo.Count, ConsoleColor.DarkYellow);
+            Console.WriteLine();
+            Console.ReadLine();
+        }
+
+        // ── Help screen ──────────────────────────────────────────────────────────
+
+        static void PrintHelp()
+        {
+            WriteColor("\nNumber Guessing Game\n", ConsoleColor.Cyan);
+            Console.WriteLine("Usage: \"Number Guessing.exe\" [option]");
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            Console.WriteLine("  (none)              Launch the interactive game");
+            Console.WriteLine("  --help,  -h         Show this help message");
+            Console.WriteLine("  --stats, -s         Show all-time statistics and exit");
+            Console.WriteLine("  --achievements, -a  Show achievement progress and exit");
+            Console.WriteLine();
+            Console.WriteLine("In-game commands:");
+            Console.WriteLine("  quit / exit         Abandon the current game cleanly");
+            Console.WriteLine();
+            Console.WriteLine("Environment variables:");
+            Console.WriteLine("  ANTHROPIC_API_KEY   Enable AI-powered hints (optional)");
+            Console.WriteLine("                      Falls back to directional hints if absent.");
+        }
+
         // ── Achievement viewer ───────────────────────────────────────────────────
 
         static void ShowAllAchievements()
@@ -616,8 +703,7 @@ namespace Number_Guessing
                     }
                     else if (key.EndsWith("_avg"))
                     {
-                        string[] ap = val.Split(',');
-                        if (ap.Length == 2 && int.TryParse(ap[0], out int t) && int.TryParse(ap[1], out int w))
+                        if (GameLogic.TryParseAverage(val, out int t, out int w))
                             scoreAverages[key.Substring(0, key.Length - 4)] = (t, w);
                     }
                     else if (key.Contains("_20"))
@@ -626,9 +712,7 @@ namespace Number_Guessing
                     }
                     else
                     {
-                        var scores = new List<int>();
-                        foreach (string token in val.Split(','))
-                            if (int.TryParse(token.Trim(), out int v)) scores.Add(v);
+                        var scores = GameLogic.ParseScoreList(val);
                         if (scores.Count > 0) leaderboard[key] = scores;
                     }
                 }

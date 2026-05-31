@@ -206,5 +206,95 @@ namespace Number_Guessing
             // 10 / 3 = 3.333... → rounded to 3.3
             Assert.AreEqual(3.3, GameLogic.ComputeAverage(10, 3));
         }
+
+        // ── FormatAttempts ───────────────────────────────────────────────────────
+
+        [Test]
+        public void FormatAttempts_One_SingularForm()
+        {
+            Assert.AreEqual("1 attempt", GameLogic.FormatAttempts(1));
+        }
+
+        [Test]
+        public void FormatAttempts_Zero_PluralForm()
+        {
+            Assert.AreEqual("0 attempts", GameLogic.FormatAttempts(0));
+        }
+
+        [Test]
+        public void FormatAttempts_Many_PluralForm()
+        {
+            Assert.AreEqual("5 attempts", GameLogic.FormatAttempts(5));
+        }
+
+        // ── ParseScoreList ───────────────────────────────────────────────────────
+
+        [Test]
+        public void ParseScoreList_ValidCsv_ReturnsParsedList()
+        {
+            var result = GameLogic.ParseScoreList("3,5,7,8,10");
+            CollectionAssert.AreEqual(new[] { 3, 5, 7, 8, 10 }, result);
+        }
+
+        [Test]
+        public void ParseScoreList_Empty_ReturnsEmptyList()
+        {
+            Assert.AreEqual(0, GameLogic.ParseScoreList("").Count);
+        }
+
+        [Test]
+        public void ParseScoreList_Whitespace_ReturnsEmptyList()
+        {
+            Assert.AreEqual(0, GameLogic.ParseScoreList("   ").Count);
+        }
+
+        [Test]
+        public void ParseScoreList_SpacesAroundTokens_ParsedCorrectly()
+        {
+            var result = GameLogic.ParseScoreList(" 1 , 2 , 3 ");
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, result);
+        }
+
+        [Test]
+        public void ParseScoreList_InvalidTokensSkipped()
+        {
+            var result = GameLogic.ParseScoreList("1,abc,3");
+            CollectionAssert.AreEqual(new[] { 1, 3 }, result);
+        }
+
+        // ── TryParseAverage ──────────────────────────────────────────────────────
+
+        [Test]
+        public void TryParseAverage_ValidInput_ReturnsTrueAndValues()
+        {
+            bool ok = GameLogic.TryParseAverage("45,8", out int total, out int wins);
+            Assert.IsTrue(ok);
+            Assert.AreEqual(45, total);
+            Assert.AreEqual(8, wins);
+        }
+
+        [Test]
+        public void TryParseAverage_EmptyString_ReturnsFalse()
+        {
+            Assert.IsFalse(GameLogic.TryParseAverage("", out _, out _));
+        }
+
+        [Test]
+        public void TryParseAverage_OnePart_ReturnsFalse()
+        {
+            Assert.IsFalse(GameLogic.TryParseAverage("45", out _, out _));
+        }
+
+        [Test]
+        public void TryParseAverage_NonNumeric_ReturnsFalse()
+        {
+            Assert.IsFalse(GameLogic.TryParseAverage("abc,xyz", out _, out _));
+        }
+
+        [Test]
+        public void TryParseAverage_ThreeParts_ReturnsFalse()
+        {
+            Assert.IsFalse(GameLogic.TryParseAverage("1,2,3", out _, out _));
+        }
     }
 }
